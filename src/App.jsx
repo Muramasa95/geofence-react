@@ -148,50 +148,19 @@ const MapComponent = () => {
     const modifiedRoute = directionsRendererRef.current.getDirections();
     const route = modifiedRoute.routes[0];
 
-    route.legs.forEach((leg) => {
-      leg.steps.forEach((step) => {
-        // Get the detailed path for this step
-        const path =
-          step.path ||
-          google.maps.geometry.encoding.decodePath(step.polyline.points);
+    // Helper function to detect roundabouts based on path geometry
+    function isRoundabout(path) {
+      if (path.length < 4) return false;
 
-        // If this step has a significant turn angle, sample more points
-        const needsDetailedSampling = isComplexSegment(path);
-
-        if (needsDetailedSampling) {
-          // Sample more points along the curve
-          const sampledPoints = sampleDetailedPoints(path);
-          sampledPoints.forEach((point) => {
-            coordinates.push(
-              `${point.lng().toFixed(6)},${point.lat().toFixed(6)}`
-            );
-          });
-        } else {
-          // Regular point sampling for straight segments
-          path.forEach((point) => {
-            coordinates.push(
-              `${point.lng().toFixed(6)},${point.lat().toFixed(6)}`
-            );
-          });
-        }
-      });
-    });
-
-    // Helper function to determine if a path segment is complex (has sharp turns or is circular)
-    function isComplexSegment(path) {
-      if (path.length < 3) return false;
-
-      // Calculate turn angles between consecutive points
+      // Check for circular pattern
+      let totalAngle = 0;
       for (let i = 1; i < path.length - 1; i++) {
         const angle = calculateTurnAngle(path[i - 1], path[i], path[i + 1]);
-
-        // If we detect a sharp turn (> 30 degrees) or potential roundabout
-        if (Math.abs(angle) > 30) {
-          return true;
-        }
+        totalAngle += angle;
       }
 
-      return false;
+      // If total angle change is close to 270-360 degrees, likely a roundabout
+      return Math.abs(totalAngle) > 250 && Math.abs(totalAngle) < 370;
     }
 
     // Helper function to calculate turn angle between three points
@@ -207,26 +176,31 @@ const MapComponent = () => {
       return angle;
     }
 
-    // Helper function to sample more points along complex segments
-    function sampleDetailedPoints(path) {
+    // Helper function to sample points with adaptive spacing
+    function sampleAdaptivePoints(path, isRoundaboutSection) {
       const sampledPoints = [];
+      const baseSpacing = isRoundaboutSection ? pointSpacing / 3 : pointSpacing; // More dense sampling for roundabouts
 
       for (let i = 0; i < path.length - 1; i++) {
+        const startPoint = path[i];
+        const endPoint = path[i + 1];
         const distance = google.maps.geometry.spherical.computeDistanceBetween(
-          path[i],
-          path[i + 1]
+          startPoint,
+          endPoint
         );
 
-        sampledPoints.push(path[i]);
+        sampledPoints.push(startPoint);
 
-        if (distance > pointSpacing) {
-          const numPoints = Math.floor(distance / pointSpacing);
+        if (distance > baseSpacing) {
+          const numPoints = Math.ceil(distance / baseSpacing);
+
+          // Add intermediate points
           for (let j = 1; j < numPoints; j++) {
             const fraction = j / numPoints;
             const interpolatedPoint =
               google.maps.geometry.spherical.interpolate(
-                path[i],
-                path[i + 1],
+                startPoint,
+                endPoint,
                 fraction
               );
             sampledPoints.push(interpolatedPoint);
@@ -238,12 +212,44 @@ const MapComponent = () => {
       return sampledPoints;
     }
 
-    // Remove any duplicate consecutive coordinates
-    const uniqueCoords = coordinates.filter(
-      (coord, index, array) => index === 0 || coord !== array[index - 1]
-    );
+    route.legs.forEach((leg) => {
+      leg.steps.forEach((step) => {
+        // Get the detailed path for this step
+        const path =
+          step.path ||
+          google.maps.geometry.encoding.decodePath(step.polyline.points);
 
-    // Split into chunks if needed
+        // Check if this segment contains a roundabout
+        const isRoundaboutSection = isRoundabout(path);
+
+        // Sample points with adaptive spacing
+        const sampledPoints = sampleAdaptivePoints(path, isRoundaboutSection);
+
+        // Add the sampled points to coordinates
+        sampledPoints.forEach((point) => {
+          coordinates.push(
+            `${point.lng().toFixed(6)},${point.lat().toFixed(6)}`
+          );
+        });
+      });
+    });
+
+    // Remove consecutive duplicates while preserving path accuracy
+    const uniqueCoords = coordinates.filter((coord, index, array) => {
+      if (index === 0) return true;
+
+      const [prevLng, prevLat] = array[index - 1].split(",").map(Number);
+      const [currLng, currLat] = coord.split(",").map(Number);
+
+      // Keep points that are sufficiently different
+      const threshold = 0.00001; // Approximately 1 meter
+      return (
+        Math.abs(prevLng - currLng) > threshold ||
+        Math.abs(prevLat - currLat) > threshold
+      );
+    });
+
+    // Split into chunks if needed (file size management)
     const chunkSize = Math.ceil(
       uniqueCoords.length / Math.ceil(uniqueCoords.join(",").length / 9000)
     );
