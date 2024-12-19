@@ -15,6 +15,8 @@ const MapComponent = () => {
   const DEFAULT_CENTER = { lat: 23.8859, lng: 45.0792 };
   const DEFAULT_ZOOM = 6;
 
+  const [pointSpacing, setPointSpacing] = useState(15); // Default 15 meters
+
   useEffect(() => {
     if (!mapRef.current || !window.google || !window.google.maps) return;
 
@@ -210,24 +212,29 @@ const MapComponent = () => {
       const sampledPoints = [];
 
       for (let i = 0; i < path.length - 1; i++) {
+        const distance = google.maps.geometry.spherical.computeDistanceBetween(
+          path[i],
+          path[i + 1]
+        );
+
         sampledPoints.push(path[i]);
 
-        // Add interpolated points between each pair of original points
-        const numInterpolatedPoints = 5; // Increase this for more detail
-        for (let j = 1; j < numInterpolatedPoints; j++) {
-          const fraction = j / numInterpolatedPoints;
-          const interpolatedPoint = google.maps.geometry.spherical.interpolate(
-            path[i],
-            path[i + 1],
-            fraction
-          );
-          sampledPoints.push(interpolatedPoint);
+        if (distance > pointSpacing) {
+          const numPoints = Math.floor(distance / pointSpacing);
+          for (let j = 1; j < numPoints; j++) {
+            const fraction = j / numPoints;
+            const interpolatedPoint =
+              google.maps.geometry.spherical.interpolate(
+                path[i],
+                path[i + 1],
+                fraction
+              );
+            sampledPoints.push(interpolatedPoint);
+          }
         }
       }
 
-      // Don't forget the last point
       sampledPoints.push(path[path.length - 1]);
-
       return sampledPoints;
     }
 
@@ -497,12 +504,23 @@ const MapComponent = () => {
               مسح
             </button>
             {currentRoute && (
-              <button
-                className="px-4 py-2 bg-purple-500 text-white rounded-md hover:opacity-90"
-                onClick={exportRoute}
-              >
-                تصدير المسار
-              </button>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={pointSpacing}
+                  onChange={(e) => setPointSpacing(Number(e.target.value))}
+                  className="px-2 py-1 border rounded-md w-20 text-center"
+                />
+                <span className="text-sm text-gray-600 ml-1">متر</span>
+                <button
+                  className="px-4 py-2 bg-purple-500 text-white rounded-md hover:opacity-90"
+                  onClick={exportRoute}
+                >
+                  تصدير المسار
+                </button>
+              </div>
             )}
           </div>
         </div>
