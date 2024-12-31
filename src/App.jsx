@@ -286,10 +286,9 @@ const MapComponent = () => {
   };
 
   const clearRoute = () => {
+    // Clear the directions renderer
     if (directionsRendererRef.current) {
-      // First remove the renderer completely
       directionsRendererRef.current.setMap(null);
-      // Create a completely new renderer instance
       directionsRendererRef.current = new window.google.maps.DirectionsRenderer(
         {
           map: map,
@@ -317,10 +316,23 @@ const MapComponent = () => {
         }
       );
     }
+
+    // Clear the current route state
     setCurrentRoute(null);
-    // Clear any existing markers
-    markers.forEach((marker) => marker.setMap(null));
+
+    // Clear all existing markers
+    markers.forEach((marker) => {
+      // First remove all listeners to prevent memory leaks
+      window.google.maps.event.clearListeners(marker, "dragend");
+      // Then remove the marker from the map
+      marker.setMap(null);
+    });
+
+    // Clear the markers array
     setMarkers([]);
+
+    // Reset status
+    setStatus("تم مسح المسار");
   };
 
   const addMarker = (location) => {
@@ -360,9 +372,6 @@ const MapComponent = () => {
   const calculateRoute = (startMarker, endMarker) => {
     if (!map) return;
 
-    // Clear existing route first
-    clearRoute();
-
     const directionsService = new window.google.maps.DirectionsService();
 
     const request = {
@@ -390,6 +399,8 @@ const MapComponent = () => {
         updateRouteInfo(result);
       } else {
         setStatus(`Could not calculate route: ${status}`);
+        // Clean up markers if route calculation fails
+        clearRoute();
       }
     });
   };
@@ -497,9 +508,11 @@ const MapComponent = () => {
               {mode === "geofencing" ? "وضع الرسم نشط" : "رسم منطقة"}
             </button>
             <button
-              className="px-4 py-2 bg-red-500 text-white rounded-md hover:opacity-90"
-              onClick={handleClear}
-              disabled={markers.length === 0 && !currentPolygon}
+              type="button"
+              className="px-4 py-2 bg-red-500 text-white rounded-md hover:opacity-90 cursor-pointer"
+              onClick={() => {
+                handleClear();
+              }}
             >
               مسح
             </button>
