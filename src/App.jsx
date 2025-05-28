@@ -15,7 +15,7 @@ const MapComponent = () => {
   const DEFAULT_CENTER = { lat: 23.8859, lng: 45.0792 };
   const DEFAULT_ZOOM = 6;
 
-  const [pointSpacing, setPointSpacing] = useState(100000); // Default 100000 meters
+  const [pointSpacing, setPointSpacing] = useState(100); // Default 100000 meters
 
   useEffect(() => {
     if (!mapRef.current || !window.google || !window.google.maps) return;
